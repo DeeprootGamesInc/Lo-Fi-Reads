@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes">
   <title>Lofi Comic Reader</title>
   
+  <!-- Favicon -->
+  <link rel="icon" href="logo.ico" type="image/x-icon">
+  
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
@@ -19,6 +22,9 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- New: Tesseract for local OCR & Google Identity Services for Drive -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <style>
     /* CSS VARIABLES FOR FLAWLESS THEMEING */
@@ -178,6 +184,9 @@
          <button id="btn-stats" class="btn-ui no-border p-3 rounded-full" title="Stats">
             <i data-lucide="bar-chart-2" style="width: 22px; height: 22px;"></i>
          </button>
+         <button onclick="openDriveModal()" class="btn-ui no-border p-3 rounded-full text-green-500 hover:text-green-600" title="Google Drive">
+            <i data-lucide="cloud" style="width: 22px; height: 22px;"></i>
+         </button>
          <div class="w-px h-8 bg-current opacity-20 mx-1"></div>
          <button onclick="openUrlImportModal()" class="btn-ui no-border p-3 rounded-full" title="Import URL">
             <i data-lucide="link" style="width: 22px; height: 22px;"></i>
@@ -267,6 +276,7 @@
                   <button id="btn-thumbnails" class="btn-ui p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm"><i data-lucide="layout-grid" class="w-4 h-4"></i> Pages</button>
                   <button id="btn-contrast" class="btn-ui state-contrast p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm"><i data-lucide="contrast" class="w-4 h-4"></i> Auto Contrast</button>
                   <button id="btn-auto-crop" class="btn-ui state-crop p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm"><i data-lucide="scissors" class="w-4 h-4"></i> Crop Margin</button>
+                  <button onclick="toggleOCRSearch()" class="btn-ui p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm"><i data-lucide="search" class="w-4 h-4 text-green-500"></i> OCR Search</button>
                   <button id="btn-ai-translate" class="btn-ui p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm" style="color: #a855f7;"><i data-lucide="sparkles" class="w-4 h-4"></i> Translate</button>
                   <button onclick="togglePomodoro()" class="btn-ui p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm"><i data-lucide="clock" id="icon-pomodoro" class="w-4 h-4"></i> <span id="pomodoro-time">Timer</span></button>
                   <button id="btn-zoom-reset" class="btn-ui hidden p-3 rounded-xl flex items-center gap-3 w-full justify-start text-sm" style="color: var(--accent);"><i data-lucide="zoom-out" class="w-4 h-4"></i> Reset Zoom</button>
@@ -298,6 +308,22 @@
            <button onclick="closeTranslation()" class="btn-ui no-border"><i data-lucide="x" class="w-4 h-4"></i></button>
         </div>
         <div id="ai-translate-content" class="p-5 overflow-y-auto max-h-64 text-sm whitespace-pre-wrap flex-1 opacity-90"></div>
+      </div>
+      
+      <!-- OCR Search Overlay -->
+      <div id="ocr-search-overlay" class="absolute left-1/2 -translate-x-1/2 top-20 w-[90%] md:w-96 glass-panel rounded-3xl shadow-2xl z-[65] hidden flex-col transition-all overflow-hidden" style="border-color: #10b981;">
+        <div class="px-4 py-3 flex justify-between items-center text-white font-bold text-sm" style="background: #10b981;">
+           <span class="flex items-center gap-2"><i data-lucide="search" class="w-4 h-4"></i> Local OCR Search</span>
+           <button onclick="toggleOCRSearch()" class="btn-ui no-border"><i data-lucide="x" class="w-4 h-4"></i></button>
+        </div>
+        <div class="p-4">
+            <div class="flex gap-2">
+                <input type="text" id="ocr-input" placeholder="Keyword..." class="flex-1 input-box p-2 rounded-xl text-sm focus:outline-none font-medium">
+                <button onclick="startOCRSearch()" id="btn-start-ocr" class="btn-ui px-4 py-2 rounded-xl text-xs font-bold bg-green-500 text-white border-none">Search</button>
+            </div>
+            <div id="ocr-status" class="text-[10px] opacity-60 mt-2 font-mono"></div>
+            <div id="ocr-results" class="mt-3 flex flex-col gap-1 max-h-48 overflow-y-auto"></div>
+        </div>
       </div>
 
     </div>
@@ -337,16 +363,40 @@
             </p>
             <input type="password" id="gemini-key-input" placeholder="Paste Gemini API Key..." class="w-full input-box p-3 rounded-xl focus:outline-none transition-all font-mono text-sm" onchange="localStorage.setItem('gemini_api_key', this.value)">
          </div>
+         
+         <div>
+            <p class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-2 flex items-center justify-between">
+               <span>Google Drive Client ID</span> <a href="https://console.cloud.google.com/" target="_blank" style="color: #10b981;" class="hover:underline">Docs</a>
+            </p>
+            <input type="text" id="drive-client-id" placeholder="Paste OAuth Client ID..." class="w-full input-box p-3 rounded-xl focus:outline-none transition-all font-mono text-sm mb-2" onchange="localStorage.setItem('drive_client_id', this.value)">
+            <button onclick="authGoogleDrive()" class="btn-ui w-full text-left px-4 py-2 text-xs font-bold rounded-xl flex items-center gap-2 justify-center border-green-500 text-green-600"><i data-lucide="cloud" class="w-4 h-4"></i> Connect Drive</button>
+         </div>
 
          <div>
             <p class="text-[10px] font-bold uppercase tracking-wider opacity-50 mb-2">Data & Sync</p>
             <div class="flex flex-col gap-2">
-               <button onclick="exportBackup()" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3"><i data-lucide="download" class="w-4 h-4" style="color: var(--accent);"></i> Full Zip Backup</button>
-               <button onclick="document.getElementById('backup-upload').click()" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3"><i data-lucide="upload" class="w-4 h-4" style="color: #a855f7;"></i> Restore Backup</button>
+               <button onclick="exportBackup()" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3"><i data-lucide="download" class="w-4 h-4" style="color: var(--accent);"></i> Local Zip Backup</button>
+               <button onclick="document.getElementById('backup-upload').click()" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3"><i data-lucide="upload" class="w-4 h-4" style="color: #a855f7;"></i> Restore Local Backup</button>
+               <button onclick="uploadBackupToDrive()" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3 text-green-600 border-green-200"><i data-lucide="cloud-upload" class="w-4 h-4"></i> Backup to GDrive</button>
                <button onclick="openSyncModal(); closeSettings();" class="btn-ui w-full text-left px-4 py-3 text-sm font-bold rounded-xl flex items-center gap-3"><i data-lucide="qr-code" class="w-4 h-4" style="color: #10b981;"></i> Device QR Sync</button>
                <input type="file" id="backup-upload" accept=".zip" class="hidden" onchange="importBackup(event)" />
             </div>
          </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Google Drive Browser Modal -->
+  <div id="drive-modal" class="fixed inset-0 modal-backdrop z-[110] hidden flex items-center justify-center opacity-0 transition-opacity">
+    <div class="glass-panel p-6 rounded-3xl max-w-lg w-full mx-4 relative flex flex-col h-[70vh]">
+      <button onclick="closeDriveModal()" class="absolute top-4 right-4 btn-ui no-border opacity-50 hover:opacity-100"><i data-lucide="x"></i></button>
+      <h3 class="text-xl font-bold mb-4 flex items-center gap-2 text-green-600"><i data-lucide="cloud"></i> Drive Comics</h3>
+      <div class="flex gap-2 mb-4">
+          <input type="text" id="drive-search" placeholder="Search Drive..." class="flex-1 input-box p-2 rounded-xl text-sm focus:outline-none">
+          <button onclick="listDriveFiles()" class="btn-ui px-3 rounded-xl"><i data-lucide="search" class="w-4 h-4"></i></button>
+      </div>
+      <div id="drive-list" class="flex-1 overflow-y-auto flex flex-col gap-2 p-2 border rounded-xl" style="border-color: var(--border-color); background: var(--bg-main);">
+          <p class="text-xs opacity-50 text-center mt-10">Connect Drive in Settings first.</p>
       </div>
     </div>
   </div>
@@ -505,7 +555,8 @@
       stats: { pages: parseInt(localStorage.getItem('stat_pages')||0), time: parseInt(localStorage.getItem('stat_time')||0) },
       readTimer: null, thumbsOpen: false, tocOpen: false, activeBookmarkIndex: null, isDrawing: false, lastX: 0, lastY: 0, draggedComicId: null,
       pomodoroTime: 25 * 60, pomodoroMode: 'read', pomodoroInterval: null, magTimer: null, isMagActive: false, magStartX: 0, magStartY: 0,
-      editingComicId: null
+      editingComicId: null,
+      driveToken: null, isOCRSearching: false, ocrWorker: null
     };
 
     let audioCtx = null; let customAudioUrlObj = null; 
@@ -547,7 +598,9 @@
       btnAiTranslate: document.getElementById('btn-ai-translate'), aiOverlay: document.getElementById('ai-translate-overlay'), aiContent: document.getElementById('ai-translate-content'), geminiKeyInput: document.getElementById('gemini-key-input'),
       settingsModal: document.getElementById('settings-modal'), themeSelector: document.getElementById('theme-selector'),
       pomodoroTime: document.getElementById('pomodoro-time'), iconPomodoro: document.getElementById('icon-pomodoro'), btnToggleNotif: document.getElementById('btn-toggle-notif'),
-      tapZoneLeft: document.getElementById('tap-zone-left'), tapZoneRight: document.getElementById('tap-zone-right')
+      tapZoneLeft: document.getElementById('tap-zone-left'), tapZoneRight: document.getElementById('tap-zone-right'),
+      driveClientId: document.getElementById('drive-client-id'), driveModal: document.getElementById('drive-modal'), driveList: document.getElementById('drive-list'), driveSearch: document.getElementById('drive-search'),
+      ocrOverlay: document.getElementById('ocr-search-overlay'), ocrInput: document.getElementById('ocr-input'), ocrStatus: document.getElementById('ocr-status'), ocrResults: document.getElementById('ocr-results'), btnStartOCR: document.getElementById('btn-start-ocr')
     };
 
     const ctxLeft = DOM.canvasLeft.getContext('2d', { willReadFrequently: true });
@@ -570,6 +623,7 @@
       }
 
       DOM.geminiKeyInput.value = localStorage.getItem('gemini_api_key') || "";
+      DOM.driveClientId.value = localStorage.getItem('drive_client_id') || "";
       DOM.themeSelector.value = savedAppTheme;
       checkNotificationStatus();
       
@@ -615,7 +669,7 @@
 
       document.addEventListener('keydown', (e) => {
         if (!DOM.readerView.classList.contains('opacity-0') && DOM.annotateModal.classList.contains('hidden')) {
-          if (e.key === 'Escape') { if (State.thumbsOpen) toggleThumbnails(); else if(State.tocOpen) toggleToC(); else if (State.zoom > 1) resetZoom(true); else closeReader(); return; }
+          if (e.key === 'Escape') { if(State.isOCRSearching){ State.isOCRSearching=false; } else if (State.thumbsOpen) toggleThumbnails(); else if(State.tocOpen) toggleToC(); else if (State.zoom > 1) resetZoom(true); else closeReader(); return; }
           if (e.key === 'ArrowRight' || e.key === 'd' || e.code === 'Space') turnPage('next');
           if (e.key === 'ArrowLeft' || e.key === 'a') turnPage('prev');
           if (e.key.toLowerCase() === 't') toggleThumbnails(); if (e.key.toLowerCase() === 'm') toggleReadMode();
@@ -625,6 +679,140 @@
 
       setupMagnifier(); setupPanZoomSwipe(); setupAnnotator(); await loadLibrary();
     }
+
+    // --- Google Drive Integration ---
+    window.authGoogleDrive = () => {
+        const clientId = DOM.driveClientId.value.trim();
+        if(!clientId) { alert("Будь ласка, введіть свій Google OAuth Client ID"); return; }
+        const client = google.accounts.oauth2.initTokenClient({
+            client_id: clientId,
+            scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/drive.file',
+            callback: (response) => {
+                if(response.error) { alert("Auth error: " + response.error); return; }
+                State.driveToken = response.access_token;
+                alert("Успішно підключено до Google Drive!");
+            },
+        });
+        client.requestAccessToken();
+    };
+
+    window.openDriveModal = () => {
+        if(!State.driveToken) { alert("Спершу підключіть Google Drive в Налаштуваннях!"); openSettings(); return; }
+        DOM.driveModal.classList.remove('hidden'); setTimeout(() => DOM.driveModal.classList.remove('opacity-0'), 10);
+        listDriveFiles();
+    };
+    window.closeDriveModal = () => { DOM.driveModal.classList.add('opacity-0'); setTimeout(() => DOM.driveModal.classList.add('hidden'), 300); };
+
+    window.listDriveFiles = async () => {
+        DOM.driveList.innerHTML = `<i data-lucide="loader" class="animate-spin mx-auto mt-10 w-8 h-8 opacity-50"></i>`; lucide.createIcons();
+        const query = DOM.driveSearch.value.trim() ? `and name contains '${DOM.driveSearch.value.trim()}'` : `and (mimeType='application/pdf' or mimeType='application/zip' or mimeType='application/x-zip-compressed' or mimeType='application/vnd.comicbook+zip')`;
+        try {
+            const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=trashed=false ${query}&fields=files(id,name,size,thumbnailLink)&pageSize=20`, { headers: { Authorization: `Bearer ${State.driveToken}` } });
+            const data = await res.json();
+            DOM.driveList.innerHTML = '';
+            if(!data.files || data.files.length === 0) { DOM.driveList.innerHTML = `<p class="text-xs opacity-50 text-center mt-10">Нічого не знайдено.</p>`; return; }
+            data.files.forEach(f => {
+                const el = document.createElement('div'); el.className = "flex items-center gap-3 p-2 border rounded-xl hover:bg-black/5 cursor-pointer"; el.style.borderColor = "var(--border-color)";
+                el.innerHTML = `
+                   ${f.thumbnailLink ? `<img src="${f.thumbnailLink}" class="w-10 h-14 object-cover rounded shadow">` : `<div class="w-10 h-14 bg-gray-200 rounded flex items-center justify-center"><i data-lucide="file" class="w-5 h-5 opacity-50"></i></div>`}
+                   <div class="flex-1 overflow-hidden"><p class="text-sm font-bold truncate">${f.name}</p><p class="text-[10px] opacity-60">${f.size ? (f.size / 1024 / 1024).toFixed(2) + ' MB' : 'Unknown size'}</p></div>
+                   <button class="btn-ui px-3 py-1.5 rounded-lg text-xs font-bold text-green-600 border-green-200 bg-green-50">Завантажити</button>
+                `;
+                el.onclick = () => downloadDriveFile(f.id, f.name); DOM.driveList.appendChild(el);
+            });
+            lucide.createIcons();
+        } catch(e) { DOM.driveList.innerHTML = `<p class="text-xs text-red-500 text-center mt-10">Помилка API: ${e.message}</p>`; }
+    };
+
+    async function downloadDriveFile(id, name) {
+        closeDriveModal(); DOM.loadingText.textContent = `Downloading ${name}...`; DOM.loadingOverlay.classList.remove('opacity-0', 'pointer-events-none');
+        try {
+            const res = await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`, { headers: { Authorization: `Bearer ${State.driveToken}` } });
+            if(!res.ok) throw new Error("Download failed");
+            const buffer = await res.arrayBuffer();
+            await processFileBuffer(buffer, name); await loadLibrary();
+        } catch(e) { alert("Помилка завантаження: " + e.message); }
+        DOM.loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+    }
+
+    window.uploadBackupToDrive = async () => {
+        if(!State.driveToken) { alert("Спершу підключіть Drive в Налаштуваннях!"); return; }
+        DOM.loadingText.textContent = 'Preparing Backup...'; DOM.loadingOverlay.classList.remove('opacity-0', 'pointer-events-none');
+        try {
+            const zipBlob = await createBackupBlob();
+            DOM.loadingText.textContent = 'Uploading to Drive...';
+            const metadata = { name: `LofiReads_Backup_${new Date().toISOString().split('T')[0]}.zip`, mimeType: 'application/zip' };
+            const form = new FormData();
+            form.append('metadata', new Blob([JSON.stringify(metadata)], {type: 'application/json'}));
+            form.append('file', zipBlob);
+
+            const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+                method: 'POST', headers: { Authorization: `Bearer ${State.driveToken}` }, body: form
+            });
+            if(!res.ok) throw new Error("Upload failed");
+            alert("Бек-ап успішно збережено на ваш Google Drive!");
+        } catch(e) { alert("Помилка: " + e.message); }
+        DOM.loadingOverlay.classList.add('opacity-0', 'pointer-events-none');
+    };
+
+    // --- Local OCR Integration (Tesseract.js) ---
+    window.toggleOCRSearch = () => {
+        DOM.ocrOverlay.classList.toggle('hidden');
+        if(!DOM.ocrOverlay.classList.contains('hidden')) { DOM.ocrOverlay.classList.add('flex'); DOM.ocrInput.focus(); DOM.ocrResults.innerHTML = ''; DOM.ocrStatus.textContent = 'Введіть слово для пошуку по поточному коміксу.'; } 
+        else { DOM.ocrOverlay.classList.remove('flex'); State.isOCRSearching = false; }
+    };
+
+    window.startOCRSearch = async () => {
+        const keyword = DOM.ocrInput.value.trim().toLowerCase();
+        if(!keyword) return;
+        if(State.isOCRSearching) { State.isOCRSearching = false; DOM.btnStartOCR.textContent = "Search"; DOM.ocrStatus.textContent = "Зупинено."; return; }
+        
+        State.isOCRSearching = true; DOM.btnStartOCR.textContent = "Stop"; DOM.ocrResults.innerHTML = '';
+        DOM.ocrStatus.textContent = 'Завантаження Tesseract.js (може зайняти час при першому запуску)...';
+        
+        if(!State.ocrWorker) {
+            try {
+                State.ocrWorker = await Tesseract.createWorker('eng+ukr', 1, { logger: m => { if(m.status === 'recognizing text') DOM.ocrStatus.textContent = `Сканую сторінку... ${(m.progress*100).toFixed(0)}%`; }});
+            } catch(e) { DOM.ocrStatus.textContent = 'Помилка OCR: ' + e.message; State.isOCRSearching = false; DOM.btnStartOCR.textContent = "Search"; return; }
+        }
+
+        const total = getTotalPages();
+        const hiddenCanvas = document.createElement('canvas'); const hCtx = hiddenCanvas.getContext('2d');
+        
+        for(let i = 1; i <= total; i++) {
+            if(!State.isOCRSearching) break;
+            DOM.ocrStatus.textContent = `Рендер сторінки ${i} з ${total}...`;
+            
+            // Render page to hidden canvas
+            try {
+               const dpr = window.devicePixelRatio || 1;
+               if (State.comicType === 'pdf') {
+                   const page = await State.pdfDoc.getPage(i); 
+                   const viewport = page.getViewport({ scale: 1.5 }); // Good balance for OCR speed/quality
+                   hiddenCanvas.width = viewport.width; hiddenCanvas.height = viewport.height;
+                   await page.render({ canvasContext: hCtx, viewport: viewport }).promise;
+               } else {
+                   const file = State.cbzFiles[i - 1]; const url = URL.createObjectURL(await file.async("blob"));
+                   const img = new Image(); img.src = url; await new Promise(r => img.onload = r);
+                   hiddenCanvas.width = img.width; hiddenCanvas.height = img.height;
+                   hCtx.drawImage(img, 0, 0); URL.revokeObjectURL(url);
+               }
+               
+               DOM.ocrStatus.textContent = `Аналіз тексту на сторінці ${i}...`;
+               const { data: { text } } = await State.ocrWorker.recognize(hiddenCanvas);
+               
+               if(text.toLowerCase().includes(keyword)) {
+                   const resEl = document.createElement('div');
+                   resEl.className = "p-2 bg-black/5 rounded-lg text-sm flex justify-between items-center";
+                   resEl.innerHTML = `<span>Знайдено на сторінці <b>${i}</b></span> <button class="btn-ui px-2 py-1 rounded text-xs text-green-600 font-bold border-green-200">Go</button>`;
+                   resEl.querySelector('button').onclick = () => { State.currentPage = i; if (State.readMode === 'book' && i % 2 === 0) State.currentPage--; resetZoom(false); renderCurrentPages(); toggleOCRSearch(); };
+                   DOM.ocrResults.appendChild(resEl);
+               }
+            } catch(e) { console.error("OCR Error on page", i, e); }
+        }
+        
+        if(State.isOCRSearching) { DOM.ocrStatus.textContent = 'Пошук завершено.'; State.isOCRSearching = false; DOM.btnStartOCR.textContent = "Search"; }
+    };
 
     window.openSettings = () => { DOM.settingsModal.classList.remove('hidden'); setTimeout(() => DOM.settingsModal.classList.remove('opacity-0'), 10); };
     window.closeSettings = () => { DOM.settingsModal.classList.add('opacity-0'); setTimeout(() => DOM.settingsModal.classList.add('hidden'), 300); };
@@ -1199,6 +1387,7 @@
 
     function closeReader() {
       resetZoom(false); stopTimer(); resetComicAudio(); if(State.thumbsOpen) toggleThumbnails(); if(State.tocOpen) toggleToC(); closeTranslation();
+      if(State.isOCRSearching) toggleOCRSearch();
       DOM.readerView.style.transform = ''; DOM.ambilight.style.opacity = '0';
       DOM.webtoonContainer.classList.add('hidden'); DOM.pagedContainer.classList.remove('hidden'); DOM.webtoonTrack.innerHTML = '';
       DOM.readerView.classList.replace('opacity-100', 'opacity-0'); DOM.readerView.classList.replace('translate-y-0', 'translate-y-full'); DOM.readerView.classList.replace('pointer-events-auto', 'pointer-events-none');
